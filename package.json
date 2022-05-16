@@ -1,0 +1,14 @@
+{
+	"name": "horrific-chess",
+	"version": "0.0.1",
+	"description": "Stockfish vs Stockfish: but they are playing the worst possible moves.",
+	"main": "index.js",
+	"keywords": [],
+	"author": "Iannis de Zwart",
+	"license": "ISC",
+	"dependencies": {
+		"@types/node": "^17.0.33",
+		"node-stockfish": "file:node-stockfish-0.1.1.tgz"
+	},
+	"type": "module"
+}

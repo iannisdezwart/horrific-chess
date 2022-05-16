@@ -1,0 +1,12 @@
+{
+	"compilerOptions": {
+		"target": "es2017",
+		"lib": [
+			"dom",
+			"esnext"
+		],
+		"downlevelIteration": true,
+		"moduleResolution": "node",
+		"module": "esnext"
+	}
+}
