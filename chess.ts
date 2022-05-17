@@ -77,9 +77,48 @@ export class ChessPiece
 	}
 
 	/**
-	 * Returns the unicode character for the piece.
+	 * Returns the character for the piece.
 	 */
 	toString()
+	{
+		switch (this.type)
+		{
+			case ChessPieceType.King:
+			{
+				return this.colour == Colour.White ? 'K' : 'k'
+			}
+
+			case ChessPieceType.Queen:
+			{
+				return this.colour == Colour.White ? 'Q' : 'q'
+			}
+
+			case ChessPieceType.Rook:
+			{
+				return this.colour == Colour.White ? 'R' : 'r'
+			}
+
+			case ChessPieceType.Bishop:
+			{
+				return this.colour == Colour.White ? 'B' : 'b'
+			}
+
+			case ChessPieceType.Knight:
+			{
+				return this.colour == Colour.White ? 'N' : 'n'
+			}
+
+			case ChessPieceType.Pawn:
+			{
+				return this.colour == Colour.White ? 'P' : 'p'
+			}
+		}
+	}
+
+	/**
+	 * Returns the unicode character for the piece.
+	 */
+	toUnicodeCharacter()
 	{
 		switch (this.type)
 		{
@@ -250,6 +289,10 @@ export class ChessBoard
 	turnNumber: number
 
 	moves: Move[]
+	fiftyMoveRule: number
+	fiftyMoveRuleReached: boolean
+	history: Map<String, number>
+	threefoldRepetition: boolean
 
 	constructor()
 	{
@@ -268,6 +311,10 @@ export class ChessBoard
 		this.turnNumber = 0
 
 		this.moves = []
+		this.fiftyMoveRule = 0
+		this.fiftyMoveRuleReached = false
+		this.history = new Map()
+		this.threefoldRepetition = false
 	}
 
 	/**
@@ -276,6 +323,34 @@ export class ChessBoard
 	boardStateUCI()
 	{
 		return this.moves.map(move => move.toString()).join(' ')
+	}
+
+	/**
+	 * Returns a hash of the board state.
+	 */
+	boardStateHash()
+	{
+		const {
+			board,
+			whiteCastleShort,
+			whiteCastleLong,
+			blackCastleShort,
+			blackCastleLong,
+			whiteEnPassant,
+			blackEnPassant,
+			turn
+		} = this
+
+		return JSON.stringify({
+			board,
+			whiteCastleShort,
+			whiteCastleLong,
+			blackCastleShort,
+			blackCastleLong,
+			whiteEnPassant,
+			blackEnPassant,
+			turn
+		})
 	}
 
 	/**
@@ -580,6 +655,12 @@ export class ChessBoard
 	 */
 	ended()
 	{
+		if (this.fiftyMoveRuleReached || this.threefoldRepetition
+			|| this.insufficientMaterial())
+		{
+			return true
+		}
+
 		if (this.turn == Colour.White && !this.whiteCanMove())
 		{
 			return true
@@ -591,6 +672,44 @@ export class ChessBoard
 		}
 
 		return false
+	}
+
+	/**
+	 * Returns the reason the game ended.
+	 */
+	endReason()
+	{
+		if (!this.ended())
+		{
+			return null
+		}
+
+		if (this.insufficientMaterial())
+		{
+			return 'Draw by insufficient material'
+		}
+
+		if (this.fiftyMoveRuleReached)
+		{
+			return 'Draw by fifty move rule'
+		}
+
+		if (this.threefoldRepetition)
+		{
+			return 'Draw by threefold repetition'
+		}
+
+		if (this.turn == Colour.White && !this.whiteCanMove() && this.whiteInCheck())
+		{
+			return 'Black wins by checkmate'
+		}
+
+		if (this.turn == Colour.Black && !this.blackCanMove() && this.blackInCheck())
+		{
+			return 'White wins by checkmate'
+		}
+
+		return 'Draw by stalemate'
 	}
 
 	/**
@@ -2118,6 +2237,7 @@ export class ChessBoard
 		const { x: xFrom, y: yFrom } = fromSquare
 		const { x: xTo, y: yTo } = toSquare
 
+		const numPiecesBefore = this.countPieces()
 		const changedSquares: Square[] = []
 
 		if (!this.isLegal(xFrom, yFrom, xTo, yTo))
@@ -2126,6 +2246,7 @@ export class ChessBoard
 		}
 
 		const movedPiece = this.board[yFrom][xFrom]
+		const capturedPiece = this.board[yTo][xTo]
 
 		this.board[yTo][xTo] = movedPiece
 		this.board[yFrom][xFrom] = null
@@ -2238,6 +2359,7 @@ export class ChessBoard
 
 		if (movedPiece.is(Colour.White, ChessPieceType.Pawn)
 			&& this.blackEnPassant[xTo]
+			&& capturedPiece == null
 			&& xTo != xFrom)
 		{
 			this.board[yFrom][xTo] = null
@@ -2247,6 +2369,7 @@ export class ChessBoard
 
 		if (movedPiece.is(Colour.Black, ChessPieceType.Pawn)
 			&& this.whiteEnPassant[xTo]
+			&& capturedPiece == null
 			&& xTo != xFrom)
 		{
 			this.board[yFrom][xTo] = null
@@ -2336,6 +2459,46 @@ export class ChessBoard
 		this.moves.push(new Move(new Square(xFrom, yFrom),
 			new Square(xTo, yTo), promotion))
 
+		// Keep track of the 50 move rule.
+
+		const numPiecesAfter = this.countPieces()
+		const pawnMove = changedSquares.find(sq =>
+			this.pieceAt(sq.x, sq.y) != null
+			&& this.pieceAt(sq.x, sq.y).type
+				== ChessPieceType.Pawn) != null
+
+		if (numPiecesBefore == numPiecesAfter && !pawnMove)
+		{
+			this.fiftyMoveRule++
+
+			if (this.fiftyMoveRule >= 100)
+			{
+				this.fiftyMoveRuleReached = true
+				return
+			}
+		}
+		else
+		{
+			this.fiftyMoveRule = 0
+		}
+
+		// Keep track of the three-fold repetition rule.
+
+		if (this.history.has(this.boardStateHash()))
+		{
+			this.history.set(this.boardStateHash(),
+				this.history.get(this.boardStateHash()) + 1)
+
+			if (this.history.get(this.boardStateHash()) >= 3)
+			{
+				this.threefoldRepetition = true
+			}
+		}
+		else
+		{
+			this.history.set(this.boardStateHash(), 1)
+		}
+
 		return changedSquares
 	}
 
@@ -2358,7 +2521,7 @@ export class ChessBoard
 				}
 				else
 				{
-					line += piece.toString() + ' '
+					line += piece.toUnicodeCharacter() + ' '
 				}
 			}
 
