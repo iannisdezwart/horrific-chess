@@ -1,10 +1,10 @@
 import { StockfishInstance } from 'node-stockfish'
 import { ChessBoard } from './chess.js'
 
+const engine = StockfishInstance.getInstance()
+
 const board = ChessBoard.generateDefault()
 board.print()
-
-const engine = StockfishInstance.getInstance()
 
 const findWorstMove = () => new Promise<void>((resolve, reject) =>
 {
@@ -22,23 +22,15 @@ const findWorstMove = () => new Promise<void>((resolve, reject) =>
 
 	engine.onAnalysisData(analysisData =>
 	{
-		if (analysisData.checkmate)
+		if (analysisData.noLegalMoves)
 		{
-			console.log(`it's checkmate!`)
+			console.log(`No legal moves!`)
 			engine.terminate()
 			reject()
 			return
 		}
 
-		if (analysisData.draw)
-		{
-			console.log(`it's a draw!`)
-			engine.terminate()
-			reject()
-			return
-		}
-
-		if (analysisData.depth < 10)
+		if (analysisData.depth < 16)
 		{
 			// Wait until we have enough depth.
 
@@ -51,11 +43,16 @@ const findWorstMove = () => new Promise<void>((resolve, reject) =>
 
 		// Find the worst move.
 
+		if (process.env.DEBUG == 'true')
+		{
+			console.error(analysisData.lines)
+		}
+
 		const worstLine = analysisData.lines[analysisData.lines.length - 1]
 		const worstMove = worstLine.moves[0]
 
 		console.log(`Board state: ${ board.boardStateUCI() }`)
-		console.log(`Move ${ board.moves.length }`)
+		console.log(`Move ${ board.turnNumber }`)
 		console.log(`=========================`)
 		console.log(`Worst move: ${ worstMove }`)
 		console.log(`Evaluation: ${ worstLine.score.toString() }`)
@@ -90,8 +87,14 @@ const main = async () =>
 		catch
 		{
 			// The game is over.
+
+			break
 		}
 	}
+
+	console.log(`Final board state: ${ board.boardStateUCI() }`)
+	console.log(`Game finished after ${ board.turnNumber } moves.`)
+	process.exit()
 }
 
 main()
